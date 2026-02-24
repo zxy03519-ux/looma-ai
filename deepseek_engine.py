@@ -40,14 +40,17 @@ MEASURE_KEYWORDS = {
 }
 
 def _extract_hex(text: str):
-    m = re.search(r"(#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}))", text)
+    # 先匹配 6 位，再匹配 3 位，避免 #123456 被错误截断为 #123
+    m = re.search(r"(#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{3}))", text)
     if m:
         return m.group(1).upper()
     return None
 
 def _color_from_words(text: str):
     t = text.lower()
-    for k, v in COLOR_MAP.items():
+    # 优先匹配更长词条，避免“深蓝”被“蓝”提前命中
+    for k in sorted(COLOR_MAP.keys(), key=len, reverse=True):
+        v = COLOR_MAP[k]
         if k in t:
             return v
     return None
@@ -132,7 +135,8 @@ def _extract_style_keywords(text: str):
     return found
 
 def _extract_fabric(text: str):
-    m = re.search(r"(真丝|丝绸|丝|棉|牛仔|牛仔布|羊毛|毛|麻|蕾丝|皮革|皮|涤纶|锦纶|羊绒|丝绒)", text, flags=re.I)
+    # 优先匹配长词，避免“牛仔布”被“牛仔”提前吞掉
+    m = re.search(r"(真丝|丝绸|牛仔布|牛仔|羊毛|羊绒|丝绒|皮革|涤纶|锦纶|蕾丝|棉|麻|丝|毛|皮)", text, flags=re.I)
     if m:
         return m.group(0)
     return None
@@ -153,6 +157,8 @@ def parse_with_deepseek(user_text: str, inspiration_image: Any = None) -> Dict[s
             "hip": None,
             "shoulder": None,
             "torso_length": None,
+            "neck_type": None,
+            "sleeve_length": None,
             "notes": text,
             "style_keywords": []
         }
@@ -209,8 +215,8 @@ def parse_with_deepseek(user_text: str, inspiration_image: Any = None) -> Dict[s
         result.update(measures)
 
         # sleeve/neck inference
-        if "v领" in text or "v 领" in text or "v-neck" in text:
-            result["neck_type"] = "V 领"
+        if "v领" in low or "v 领" in low or "v-neck" in low:
+            result["neck_type"] = "V领"
         if any(w in text for w in ["无袖", "strap", "吊带"]):
             result["sleeve_length"] = "无袖"
         elif any(w in text for w in ["短袖", "short sleeve"]):

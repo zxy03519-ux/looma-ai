@@ -19,7 +19,7 @@ def _hex_to_rgb(hexstr):
     try:
         r = int(h[0:2], 16); g = int(h[2:4], 16); b = int(h[4:6], 16)
         return (r, g, b)
-    except:
+    except (ValueError, TypeError):
         return (255, 182, 193)
 
 def _add_watermark_pil(img: Image.Image, text="张小鱼原创"):
@@ -32,7 +32,8 @@ def _add_watermark_pil(img: Image.Image, text="张小鱼原创"):
             font = ImageFont.truetype("msyh.ttf", fontsize)
         except Exception:
             font = ImageFont.load_default()
-        tw, th = draw.textsize(text, font=font)
+        bbox = draw.textbbox((0, 0), text, font=font)
+        tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
         draw.text((w - tw - 12, h - th - 12), text, fill=(0,0,0,120), font=font)
         draw.text((int(w*0.05), int(h*0.1)), text, fill=(0,0,0,30), font=font)
         combined = Image.alpha_composite(img.convert('RGBA'), overlay)
@@ -112,7 +113,7 @@ def generate_dxf(data: dict, output_path=None):
         sleeve_width = float(data.get("sleeve_width") or 24.0)
         sleeve_cap = float(data.get("sleeve_cap_height") or 10.0)
         sleeve_len_option = data.get("sleeve_length", "长袖")
-    except:
+    except (TypeError, ValueError):
         bust, waist, hip, height, shoulder, torso = 88, 68, 94, 165, 38, 40
         seam, ease, sleeve_width, sleeve_cap = 1.5, 4.0, 24.0, 10.0
         sleeve_len_option = "长袖"
@@ -146,7 +147,7 @@ def generate_dxf(data: dict, output_path=None):
     sleeve_y = y0 - (sleeve_cap + 10.0)
     sleeve_len_map = {"无袖": 0.0, "短袖": 22.0, "七分袖": 45.0, "长袖": 60.0}
     slen_cm = sleeve_len_map.get(sleeve_len_option, 60.0)
-    sleeve_h = sleeve_cap
+    sleeve_h = max(sleeve_cap, slen_cm / 3.0)
     sleeve_w = sleeve_width / 2.0 + seam
     pts_sleeve = [(sleeve_x, sleeve_y), (sleeve_x + sleeve_w, sleeve_y), (sleeve_x + sleeve_w, sleeve_y + sleeve_h), (sleeve_x, sleeve_y + sleeve_h)]
     msp.add_lwpolyline(pts_sleeve, close=True, dxfattribs={"layer": "CUT"})

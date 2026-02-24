@@ -173,7 +173,7 @@ with col_main:
     # on_change 回调：当文本框内容改变并失去焦点时触发解析
     def _on_notes_change():
         txt = st.session_state.get("notes_input", "").strip()
-        if len(txt) < 3:
+        if len(txt) < 3 and _get_uploaded_image_from_state() is None:
             return
         insp = _get_uploaded_image_from_state()
         try:
@@ -280,7 +280,7 @@ with col_side:
         try:
             res = generate_pattern(optimized)
         except Exception as e:
-            st.exception(f"生成图纸失败：{e}")
+            st.error(f"生成图纸失败：{e}")
             res = None
 
         if res:
