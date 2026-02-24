@@ -2,49 +2,71 @@
 import streamlit as st
 
 def apply_theme(primary_color="#111111", secondary_color="#FF6B6B", bg_color="#FFFFFF"):
-    """
-    注入基础 CSS，让界面带有“张小鱼原创”风格痕迹。
-    primary_color / secondary_color 可从 app.py 的颜色选择器动态传入。
-    """
     css = f"""
     <style>
+    /* 全局 */
     .stApp {{
         background-color: {bg_color};
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Microsoft Yahei', Arial;
     }}
-    /* 顶部标题样式 */
+    /* 标题与品牌区更紧凑，避免大留白 */
     .app-title {{
         display:flex;
         align-items:center;
         gap:12px;
+        padding:6px 0;
     }}
     .brand-badge {{
-        font-size:14px;
+        font-size:13px;
         font-weight:700;
         color:{primary_color};
         background: rgba(0,0,0,0.03);
         padding:6px 10px;
         border-radius:8px;
     }}
-    /* 按钮渐变 */
-    .stButton > button {{
-        background: linear-gradient(135deg, {primary_color}, {secondary_color});
-        color: white;
-        border-radius: 8px;
-        height: 44px;
-        font-weight: 600;
+    /* 按钮样式（更大，更易点按） */
+    .stButton>button, button[data-baseweb="button"] {{
+        background: linear-gradient(135deg, {primary_color}, {secondary_color}) !important;
+        color: white !important;
+        border-radius: 10px !important;
+        height: 48px !important;
+        font-weight: 700 !important;
+        font-size: 16px !important;
     }}
-    /* 小脚注 / 水印 风格 */
+    /* 手机友好：压缩行高与 margin */
+    .css-1d391kg, .css-18e3th9, .css-1offfwp {{
+        padding-top: 6px !important;
+        padding-bottom: 6px !important;
+    }}
+    /* 上传区域全宽、明确边距 */
+    .upload-box .stFileUploader {{
+        width: 100% !important;
+    }}
+    /* 小水印 */
     .zhangxiaoyu-watermark {{
         position: fixed;
-        right: 18px;
-        bottom: 18px;
-        opacity: 0.12;
-        font-size: 14px;
+        right: 14px;
+        bottom: 14px;
+        opacity: 0.10;
+        font-size: 12px;
         font-weight: 800;
-        transform: rotate(-15deg);
+        transform: rotate(-12deg);
         color: {primary_color};
         pointer-events: none;
+    }}
+    /* 响应式：窄屏进一步放大文本与控件 */
+    @media (max-width: 600px) {{
+        .stApp {{
+            font-size: 16px;
+        }}
+        .brand-badge {{
+            font-size:12px;
+            padding:6px 8px;
+        }}
+        .stButton>button {{
+            height:54px !important;
+            font-size:18px !important;
+        }}
     }}
     </style>
     """
@@ -53,12 +75,12 @@ def apply_theme(primary_color="#111111", secondary_color="#FF6B6B", bg_color="#F
 def show_brand_header(title="Looma AI 定制系统 · 张小鱼原创", subtitle="千人千面 · 口语化定制"):
     st.markdown(f"""
     <div class="app-title">
-      <div style="width:56px; height:56px; border-radius:12px; background:linear-gradient(135deg,#FF6B6B,#FFB199); display:flex; align-items:center; justify-content:center; color:white; font-weight:900;">
+      <div style="width:48px; height:48px; border-radius:10px; background:linear-gradient(135deg,#FF6B6B,#FFB199); display:flex; align-items:center; justify-content:center; color:white; font-weight:900;">
         ZX
       </div>
       <div>
-        <div style="font-size:20px; font-weight:800;">{title}</div>
-        <div style="font-size:12px; color: #555;">{subtitle}</div>
+        <div style="font-size:18px; font-weight:800;">{title}</div>
+        <div style="font-size:12px; color: #666;">{subtitle}</div>
       </div>
       <div style="margin-left:auto;">
         <span class="brand-badge">张小鱼原创</span>
