@@ -1,11 +1,4 @@
 # deepseek_engine.py
-"""
-轻量版“DeepSeek”解析器（本地实现）
-- 支持口语化自然语言解析（中文/英文）
-- 支持从上传灵感图片中提取主色与基于关键词的款式建议（轻量识图）
-返回结构化字典，供 app.py / ai_optimizer 使用。
-"""
-
 import re
 from typing import Dict, Any
 from PIL import Image
@@ -43,13 +36,8 @@ def _color_from_words(text: str):
     return None
 
 def _dominant_color_from_image(pil_img: Image.Image) -> str:
-    """
-    简单主色提取：缩小图像后统计最常见像素（不使用外部 kmeans）
-    返回 HEX 字符串
-    """
     try:
         small = pil_img.convert("RGB").resize((80, 80))
-        # getcolors returns list of (count, (r,g,b))
         colors = small.getcolors(80 * 80)
         if not colors:
             return "#FFB6C1"
@@ -64,7 +52,6 @@ def _suggest_garment_from_text(text: str):
     for g in GARMENT_OPTIONS:
         if g in t:
             return g
-    # 英文匹配
     if "dress" in t:
         return "连衣裙"
     if "shirt" in t:
@@ -108,30 +95,24 @@ def _extract_measurements(text: str, fallback=None):
                 out["waist"] = int(nums[2])
             if "hip" not in out and len(nums)>=4:
                 out["hip"] = int(nums[3])
-    # final fill
     for k,v in fallback.items():
         out.setdefault(k, v)
     return out
 
 def parse_with_deepseek(user_text: str, inspiration_image: Any = None) -> Dict[str, Any]:
-    """
-    解析用户自然语言（优先）并结合灵感图片（可选）产出结构化参数。
-    inspiration_image: PIL.Image 或 None
-    返回 dict，保证包含关键字段。
-    """
     try:
         text = (user_text or "").strip()
         low = text.lower()
         result = {
-            "garment": "连衣裙",
+            "garment": None,
             "fit": "Regular",
             "length": "Regular",
-            "color": "#FFB6C1",
-            "material": "纯棉",
-            "height": 165,
-            "bust": 88,
-            "waist": 68,
-            "hip": 94,
+            "color": None,
+            "material": None,
+            "height": None,
+            "bust": None,
+            "waist": None,
+            "hip": None,
             "notes": text,
             "style_keywords": []
         }
@@ -139,7 +120,6 @@ def parse_with_deepseek(user_text: str, inspiration_image: Any = None) -> Dict[s
         if not text and inspiration_image is None:
             return result
 
-        # 1) color: hex in text -> explicit color; else color words; else extract from image
         hex_value = _extract_hex(text)
         if hex_value:
             result["color"] = hex_value
@@ -148,70 +128,46 @@ def parse_with_deepseek(user_text: str, inspiration_image: Any = None) -> Dict[s
             if word_color:
                 result["color"] = word_color
 
-        # 2) garment from text or image filename or basic heuristics
         g = _suggest_garment_from_text(text)
         if g:
             result["garment"] = g
 
-        # 3) fit words
         if any(w in low for w in ["修身","slim","紧身"]):
             result["fit"] = "Slim"
         elif any(w in low for w in ["宽松","oversize","relaxed"]):
             result["fit"] = "Relaxed"
-        else:
-            # keep default
-            pass
 
-        # 4) material
-        m = re.search(r"(真丝|丝绸|丝|棉|牛仔|牛仔布|羊毛|毛|麻|蕾丝|皮|皮革|涤纶|锦纶|丝绸)", text, flags=re.I)
+        m = re.search(r"(真丝|丝绸|丝|棉|牛仔|牛仔布|羊毛|毛|麻|蕾丝|皮|皮革|涤纶|锦纶)", text, flags=re.I)
         if m:
             result["material"] = m.group(0)
 
-        # 5) measurements
         measures = _extract_measurements(text)
         result.update(measures)
 
-        # 6) style keywords heuristics
-        if any(w in low for w in ["飘逸","轻薄","透气"]):
-            result["style_keywords"].append("light_floating")
-        if any(w in low for w in ["正式","礼服","formal"]):
-            result["style_keywords"].append("formal")
-        if any(w in low for w in ["运动","运动风"]):
-            result["style_keywords"].append("sporty")
-        # include raw tokens like '荷叶边' '泡泡袖'
         decorations = []
         for deco in ["荷叶边","泡泡袖","吊带","露背","开叉","印花","刺绣","拼接","拉链","扣子","口袋","褶皱"]:
             if deco in text:
                 decorations.append(deco)
         result["style_keywords"].extend(decorations)
 
-        # 7) image-based augmentation (主色 + try to guess garment from ratio)
         if inspiration_image is not None:
             try:
                 dom_color = _dominant_color_from_image(inspiration_image)
                 if dom_color:
                     result["color"] = dom_color
-                # try to guess garment by aspect ratio of main silhouette: tall ratio -> dress/coat; wide -> top/shorts
                 w, h = inspiration_image.size
                 if h / max(1, w) > 1.4:
-                    # likely full-length photo -> dress/coat
-                    if result.get("garment") == "连衣裙":
-                        pass
-                    else:
-                        # if no strong garment from text, suggest dress/coat
-                        if _suggest_garment_from_text(text) is None:
-                            result["garment"] = "连衣裙"
+                    if result.get("garment") is None:
+                        result["garment"] = "连衣裙"
                 else:
-                    if _suggest_garment_from_text(text) is None:
-                        # short ratio -> top / pants
+                    if result.get("garment") is None:
                         result["garment"] = "衬衫"
             except Exception:
                 pass
 
         return result
     except Exception as e:
-        # 任何异常回退到一个最小结构
         return {
-            "garment": "连衣裙", "fit":"Regular", "length":"Regular",
-            "color":"#FFB6C1","material":"纯棉","height":165,"bust":88,"waist":68,"hip":94,"notes": user_text or ""
+            "garment": None, "fit":"Regular", "length":"Regular",
+            "color":None,"material":None,"height":None,"bust":None,"waist":None,"hip":None,"notes": user_text or ""
         }
