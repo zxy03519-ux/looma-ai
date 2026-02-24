@@ -1,2 +1,5 @@
 streamlit
-requests
+ezdxf
+pillow
+matplotlib
+python-dotenv
