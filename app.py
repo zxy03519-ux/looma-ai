@@ -13,22 +13,21 @@ from pattern_engine import generate_pattern
 from ai_optimizer import optimize
 
 # ------------------------
-# page config & theme
+# 页面配置与主题
 # ------------------------
 st.set_page_config(page_title="Looma AI - 张小鱼原创", layout="wide")
 apply_theme()
 show_brand_header()
 show_watermark()
-
 st.markdown("---")
 
 # ------------------------
-# Initialize default session_state keys (do not overwrite existing)
+# 初始化 session_state（默认值）
 # ------------------------
 _defaults = {
     "mobile_mode": False,
     "parsed_cache": None,           # 缓存 AI 解析结果（用于安全填充）
-    "ai_locked_fields": set(),      # 被 AI 填写且锁定的字段
+    "ai_locked_fields": [],         # 被 AI 填写且锁定的字段（list）
     "ai_suggestions": [],
 
     # 基本字段默认（会成为 widget 的初始值）
@@ -59,15 +58,13 @@ for k, v in _defaults.items():
         st.session_state[k] = v
 
 # ------------------------
-# If parsed_cache exists, copy it into session_state BEFORE creating widgets
-# This is the correct "cache -> apply -> rerender" pattern to avoid widget modification errors.
+# 如果 parsed_cache 存在，先应用到 session_state（在创建 widget 之前）
 # ------------------------
 if st.session_state.get("parsed_cache"):
     parsed = st.session_state["parsed_cache"]
-    # mapping from parsed keys (returned by parse_with_deepseek) to widget session_state keys
     mapping = {
         "garment": "garment",
-        "color": "color_picker",         # deepseek may return "color"
+        "color": "color_picker",
         "material": "material_input",
         "height": "height",
         "bust": "bust",
@@ -83,30 +80,29 @@ if st.session_state.get("parsed_cache"):
         "ease": "ease",
         "hem_depth": "hem_depth"
     }
-    # apply parsed values to session_state and mark those fields as locked by AI
     for pkey, skey in mapping.items():
         if parsed.get(pkey) is not None:
             try:
                 st.session_state[skey] = parsed[pkey]
             except Exception:
-                # be defensive — generally shouldn't run into error because this runs before widgets
                 pass
-            # record lock
-            st.session_state["ai_locked_fields"].add(skey)
-    # clear cache after applied
+            # 记录锁定（以 list 存储）
+            if skey not in st.session_state["ai_locked_fields"]:
+                st.session_state["ai_locked_fields"].append(skey)
+    # 清空缓存
     st.session_state["parsed_cache"] = None
 
 # ------------------------
-# Top controls: mobile toggle and mode selection
+# 顶部控件：手机开关与模式（手机强制智能）
 # ------------------------
 col_top1, col_top2 = st.columns([1, 4])
 with col_top1:
     st.session_state["mobile_mode"] = st.checkbox("📱 手机优化模式", value=st.session_state["mobile_mode"])
 with col_top2:
     if st.session_state["mobile_mode"]:
-        st.info("📱 手机模式已启用（将优先使用智能模式与移动友好布局）")
+        st.info("📱 手机模式已启用（优先智能模式、移动友好布局）")
 
-# mode: if mobile, force智能；否则 let user choose
+# 模式选择：手机强制智能，桌面可选
 if st.session_state["mobile_mode"]:
     current_mode = "智能模式（新手）"
     st.session_state["mode_select"] = current_mode
@@ -118,33 +114,42 @@ else:
 st.markdown("---")
 
 # ------------------------
-# Helpers
+# 辅助函数
 # ------------------------
-def _get_uploaded_image():
-    # use file_uploader widget with key "uploader" (we will create it below)
+def _get_uploaded_image_from_state():
+    """从 session_state['uploader'] 中读取 PIL.Image（如果存在）"""
     f = st.session_state.get("uploader")
-    if f:
-        try:
-            img = Image.open(f)
-            return img
-        except Exception:
-            return None
-    return None
+    if not f:
+        return None
+    try:
+        # f 是 UploadedFile-like
+        f.seek(0)
+        img = Image.open(f)
+        return img
+    except Exception:
+        return None
+
+def _apply_parsed_to_cache_and_rerun(parsed):
+    """把解析结果放入 parsed_cache 并触发 rerun（st.rerun）"""
+    st.session_state["parsed_cache"] = parsed
+    # 使用新版 API
+    st.rerun()
 
 def generate_suggestions(data):
-    """Return a list of suggestion strings based on optimized params."""
+    """生成简单的 AI 优化建议（可扩展）"""
     warns = []
-    # Example rules (extend as needed)
     if data.get("ease", 0) < 1:
-        warns.append("松量 (ease) 过小，可能导致活动受限；建议 >= 2 cm。")
+        warns.append("松量 (ease) 过小，可能导致活动受限，建议 >= 2 cm。")
     if data.get("bust", 0) < 70:
-        warns.append("胸围数值较小，确认是成人还是童装尺寸。")
+        warns.append("胸围较小，请确认是否成人尺码或单位。")
     if data.get("shoulder", 0) > 50:
-        warns.append("肩宽偏大，请确认测量方式或单位。")
+        warns.append("肩宽数值较大，请确认测量方式或单位。")
+    if abs(data.get("bust",0) - data.get("waist",0)) < 5:
+        warns.append("胸腰差过小，版型可能不明显，可考虑增加腰身或改版型。")
     return warns
 
 # ------------------------
-# Layout: adapt for mobile (single column) or desktop (two columns)
+# 布局：移动端单列 / 桌面两列
 # ------------------------
 if st.session_state["mobile_mode"]:
     col_main = st.container()
@@ -153,67 +158,54 @@ else:
     col_main, col_side = st.columns([1, 1.4])
 
 # ------------------------
-# Main column (inputs)
+# 主列：上传、文本、基础字段（使用 session_state keys）
 # ------------------------
 with col_main:
     st.subheader("📥 灵感图片（可选）")
-    # file uploader with key 'uploader' so its value is accessible in session_state and callbacks
+    # 使用 key 'uploader'，文件会存放在 session_state['uploader']
     st.file_uploader("上传灵感图片（jpg/png）", type=["jpg", "jpeg", "png"], key="uploader")
-    if st.session_state.get("uploader"):
-        try:
-            img_preview = _get_uploaded_image()
-            if img_preview:
-                st.image(img_preview, use_column_width=True, caption="灵感图预览")
-        except Exception:
-            st.write("无法显示上传图片")
+    uploaded_img = _get_uploaded_image_from_state()
+    if uploaded_img:
+        st.image(uploaded_img, use_column_width=True, caption="灵感图预览")
 
-    st.markdown("### 🎨 口语化描述 — 实时解析")
-    # auto parse callback: set parsed_cache and rerun
+    st.markdown("### 🎨 口语化描述（实时解析）")
+
+    # on_change 回调：当文本框内容改变并失去焦点时触发解析
     def _on_notes_change():
         txt = st.session_state.get("notes_input", "").strip()
         if len(txt) < 3:
             return
-        # attempt to parse using uploaded image if exists
-        insp = _get_uploaded_image()
+        insp = _get_uploaded_image_from_state()
         try:
             parsed = parse_with_deepseek(txt, inspiration_image=insp)
         except Exception:
-            # fallback to text-only parse
             parsed = parse_with_deepseek(txt)
-        # store into parsed_cache, then rerun (on rerun we'll apply cache before widget creation)
-        st.session_state["parsed_cache"] = parsed
-        # rerun to apply parsed values safely before widgets are created
-        st.experimental_rerun()
+        _apply_parsed_to_cache_and_rerun(parsed)
 
-    # notes input uses on_change to perform "real-time" parsing on change/blur
-    st.text_area("设计描述（输入并离开焦点将自动解析）",
-                 key="notes_input", on_change=_on_notes_change, height=140,
-                 placeholder="例如：我想要一件酒红色真丝连衣裙，修身，胸围86，长袖，带荷叶边")
+    st.text_area("请用口语描述你的想法（示例：酒红色真丝连衣裙，修身，胸围86，长袖）",
+                 key="notes_input", on_change=_on_notes_change, height=140)
 
-    # Manual parse button (alternate to on_change)
+    st.markdown("")
     if st.button("✨ 解析并填充表单（手动）"):
         txt = st.session_state.get("notes_input", "").strip()
-        if not txt and not st.session_state.get("uploader"):
+        if not txt and not _get_uploaded_image_from_state():
             st.error("请先输入描述或上传灵感图片以供解析。")
         else:
-            insp = _get_uploaded_image()
+            insp = _get_uploaded_image_from_state()
             try:
                 parsed = parse_with_deepseek(txt, inspiration_image=insp)
             except Exception:
                 parsed = parse_with_deepseek(txt)
-            st.session_state["parsed_cache"] = parsed
-            st.experimental_rerun()
+            _apply_parsed_to_cache_and_rerun(parsed)
 
     st.markdown("---")
-
-    # Unlock controls (clear AI locks)
     if st.button("🔓 解锁所有由 AI 填写的字段（允许手动编辑）"):
-        st.session_state["ai_locked_fields"] = set()
+        st.session_state["ai_locked_fields"] = []
         st.success("已解锁所有字段，可手动编辑。")
 
-    st.markdown("### 基本信息（AI 填写后字段会被锁定）")
+    st.markdown("### 基本信息（被 AI 填写的字段将被锁定）")
 
-    # Widgets must use keys matching session_state keys used above in parsed mapping
+    # 下面所有 widget 都要使用与 parsed mapping 对应的 key 名（便于 parsed_cache 应用）
     garment = st.selectbox("服装品类", GARMENT_OPTIONS, key="garment",
                            disabled=("garment" in st.session_state["ai_locked_fields"]))
     color_picker = st.color_picker("颜色", key="color_picker",
@@ -236,11 +228,10 @@ with col_main:
                                   disabled=("torso_length" in st.session_state["ai_locked_fields"]))
 
 # ------------------------
-# Side column: professional params & generate
+# 侧栏 / 右列：职业参数 + 生成
 # ------------------------
 with col_side:
     st.subheader("🔧 职业参数（高级）")
-    # collapse by default on mobile
     expanded = False if st.session_state["mobile_mode"] else True
     with st.expander("展开 / 编辑 职业参数", expanded=expanded):
         neck_type = st.selectbox("领型", ["圆领", "V领", "立领", "方领", "无领"], key="neck_type")
@@ -252,10 +243,8 @@ with col_side:
         hem_depth = st.number_input("下摆深度 / 裙摆高度 (cm)", 0.0, 80.0, key="hem_depth")
 
     st.markdown("---")
-
-    # Generate button
+    # 生成按钮（桌面/手机都显示）
     if st.button("🚀 生成设计与打版（2D）", use_container_width=True):
-        # Collect up-to-date design input from session_state
         design_input = {
             "garment": st.session_state.get("garment"),
             "color": st.session_state.get("color_picker"),
@@ -276,7 +265,6 @@ with col_side:
             "notes": st.session_state.get("notes_input")
         }
 
-        # If mobile, we always treat as intelligent mode; otherwise use selection
         mode_for_opt = "智能模式" if st.session_state["mobile_mode"] else st.session_state.get("mode_select", "智能模式（新手）")
 
         try:
@@ -285,10 +273,10 @@ with col_side:
             st.error(f"参数优化失败：{e}")
             optimized = design_input
 
-        # AI suggestions (simple rule-based + can extend)
+        # suggestions
         st.session_state["ai_suggestions"] = generate_suggestions(optimized)
 
-        # generate pattern (preview, dxf, json)
+        # generate pattern
         try:
             res = generate_pattern(optimized)
         except Exception as e:
@@ -296,16 +284,15 @@ with col_side:
             res = None
 
         if res:
-            st.success("✅ 生成成功 — 向下查看预览与下载")
-            # auto-scroll to bottom where preview appears
+            st.success("✅ 生成成功，向下查看预览与下载")
+            # 自动滚动到页面底部
             components.html("<script>window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });</script>", height=0)
 
-            # Preview
             preview_path = res.get("preview")
             if preview_path and os.path.exists(preview_path):
                 st.image(preview_path, use_column_width=True, caption="2D 成品预览 · 张小鱼原创")
 
-            # Download package
+            # 打包 ZIP
             zip_buf = io.BytesIO()
             with zipfile.ZipFile(zip_buf, "w") as zf:
                 if preview_path and os.path.exists(preview_path):
@@ -315,11 +302,13 @@ with col_side:
                 if res.get("json") and os.path.exists(res["json"]):
                     zf.write(res["json"], os.path.basename(res["json"]))
             zip_buf.seek(0)
-            st.download_button("⬇️ 下载完整文件包 (PNG + DXF + JSON)", zip_buf.read(), file_name=f"{design_input.get('garment','design')}_{datetime.now().strftime('%Y%m%d')}.zip", use_container_width=True)
+            st.download_button("⬇️ 下载完整文件包 (PNG + DXF + JSON)", zip_buf.read(),
+                               file_name=f"{design_input.get('garment','design')}_{datetime.now().strftime('%Y%m%d')}.zip",
+                               use_container_width=True)
 
-            # Show AI suggestions (if any)
+            # show suggestions
             if st.session_state.get("ai_suggestions"):
-                st.warning("⚠ AI 优化建议（请核对并调整）")
+                st.warning("⚠ AI 优化建议（请核对）")
                 for s in st.session_state["ai_suggestions"]:
                     st.write("•", s)
 
