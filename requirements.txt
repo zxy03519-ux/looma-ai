@@ -1,5 +1,6 @@
 streamlit
-ezdxf
 pillow
+ezdxf
 matplotlib
 python-dotenv
+openai
